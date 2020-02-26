@@ -1,0 +1,3 @@
+rootProject.name='AidlApplication'
+include ':app'
+include ':remoteservice'

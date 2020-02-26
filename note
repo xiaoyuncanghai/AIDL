@@ -1,0 +1,60 @@
+如果不使用AIDL， 客户端和服务端进行通讯，你得先将你的通讯请求转换成序列化的数据，
+然后调用transact（）函数发送给服务端，而且还得制定一个小协议，参数谁先谁后，
+服务端和客户端都必须一致，否则就会出错。
+
+使用AIDL的场景： 本地应用需要使用远程服务， 因为跨进程， 我们不能直接访问服务，
+      本地： MainActivity
+      远程： RemoteService
+
+      AIDL接口： IMyAidlInterface.aidl (一式两份， 同时存在于远程服务和本地应用之中)
+      简答的理解：就是双胞胎姐妹， 姐夫和妹夫之间的沟通交流，都需要这个双胞胎姐妹之间的
+                 交流。
+
+      实现步骤：  1. 将其它应用中的服务启动并绑定.
+                 2. 拿到其他应用中的服务onBind()方法返回的对象.
+
+     1.让Service的onBind()方法能返回一个实现了这个接口的对象.
+      因为onBind()方法的返回值类型是IBinder, 就需要写一个类继承Binder,
+      这个类要实现第一步写的那个接口, 因为这个对象是要传到绑定服务的地方,
+      让别人能调用里面的方法.
+      注意, IBinder是一个接口, Binder类实现了这个接口, 应该继承Binder, 不要搞混了.
+     2.onBind()方法返回的对象会被传到ServiceConnection的onServiceConnected()方法
+      的参数中, 我们需要写一个类实现ServiceConnection接口,重写里面onServiceConnected()
+      方法, 从该方法的参数中拿到Service传过来的IBinder对象, 并把它强转为第一步的那个接
+      口类型, 就可以调用里面的方法了.
+
+原理分析：
+    客户端通过bindService来绑定服务端的服务。当服务绑定成功后，
+    ServiceConnection 中 有一个onServiceConnected的回调，
+    第一个参数ComponentName对应服务组件(包含Service的包名和类的全名)
+    第二个参数返回一个iBinder对象。
+    通过 MyAidlServer.Stub.asInterface 实例化出具体的对象。
+    再来看asInterface的代码：
+    /**
+     * Cast an IBinder object into an com.example.aidlapplication.IMyAidlInterface interface,
+     * generating a proxy if needed.
+     */
+    public static com.example.aidlapplication.IMyAidlInterface asInterface(android.os.IBinder obj)
+    {
+      if ((obj==null)) {
+        return null;
+      }
+      android.os.IInterface iin = obj.queryLocalInterface(DESCRIPTOR);
+      if (((iin!=null)&&(iin instanceof com.example.aidlapplication.IMyAidlInterface))) {
+        return ((com.example.aidlapplication.IMyAidlInterface)iin);
+      }
+      return new com.example.aidlapplication.IMyAidlInterface.Stub.Proxy(obj);
+    }
+
+    即：访问服务的时候是同进程，拿到的是IMyAidlInterface.Stub()对象
+        访问服务不在同一个进程里面，则拿到的是Stub的代理对象
+
+        在通过代理对象去调用不同进程的方法 涉及到进程间的数据传输，
+        android系统中的binder进程间通信(IPC)就使用了Parcel类来进行客户端
+        与服务端数据的交互。在代理类里的方法实现首先把需要传输的数据包装成Parcel对象。
+
+        然后通过调用 transact 方法 指定调用的方法名(Stub.TRANSACTION_addTwoNums)，
+        以及参数（_data），以及方法的返回结果(_reply) 这是一个同步方法，
+        执行完成后的结果保存在_reply 对象中。代理对象调用transact会映射到远端服务
+        的onTransact方法中，在这里具体完成调用过程。
+
